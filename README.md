@@ -77,6 +77,23 @@ fluxcut
 
 ---
 
+## 🗑️ Uninstallation
+
+Uninstall FluxCut and all associated desktop integration files cleanly with a single command:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/njbaulia-wq/unik/main/uninstall.sh | bash
+```
+
+> **Purge Configuration & Thumbnail Cache:**  
+> By default, your project settings (`~/.config/fluxcut`) and cache (`~/.cache/fluxcut`) are preserved. To completely wipe all files:
+> ```bash
+> curl -fsSL https://raw.githubusercontent.com/njbaulia-wq/unik/main/uninstall.sh | bash -s -- --purge
+> ```
+> *(Alternatively: `curl -fsSL https://raw.githubusercontent.com/njbaulia-wq/unik/main/install.sh | bash -s -- --uninstall`)*
+
+---
+
 ## 🎯 Key Features
 
 ### 🎞️ Fast-Path Lossless Remuxing (PRD Scenario B)

@@ -237,9 +237,13 @@ main() {
     print_banner
     check_platform
 
+    DO_UNINSTALL=false
     BUILD_FROM_SOURCE=false
     for arg in "$@"; do
         case "${arg}" in
+            --uninstall|-u)
+                DO_UNINSTALL=true
+                ;;
             --build|--source|-b)
                 BUILD_FROM_SOURCE=true
                 ;;
@@ -248,11 +252,22 @@ main() {
                 echo ""
                 echo "Options:"
                 echo "  --build, --source, -b    Build natively from source via cargo (recommended for Fedora 40+, Arch, etc.)"
+                echo "  --uninstall, -u          Uninstall FluxCut and desktop integration from the system"
                 echo "  --help, -h               Show this help message"
                 exit 0
                 ;;
         esac
     done
+
+    if [ "${DO_UNINSTALL}" = true ]; then
+        SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+        if [ -f "${SCRIPT_DIR}/uninstall.sh" ]; then
+            exec bash "${SCRIPT_DIR}/uninstall.sh" "$@"
+        else
+            curl -fsSL "https://raw.githubusercontent.com/${REPO}/main/uninstall.sh" | bash -s -- "$@"
+            exit 0
+        fi
+    fi
 
     if [ "${BUILD_FROM_SOURCE}" = true ]; then
         install_from_source
