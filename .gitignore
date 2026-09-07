@@ -16,7 +16,8 @@ Cargo.lock.backup
 fluxcut-test-output/
 *.log
 
-# Flatpak / Meson build artifacts
+# Flatpak / Meson / Release packaging artifacts
 .flatpak-builder/
 build/
 _build/
+dist/
