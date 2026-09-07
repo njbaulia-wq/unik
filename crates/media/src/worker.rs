@@ -166,9 +166,18 @@ fn process_ingest_request(req: &IngestRequest, cache: &DiskCacheManager) -> Inge
         );
 
         if let Some(cached_data) = cache.get_thumbnail(&thumb_key) {
-            thumbnail_rgba = Some(cached_data);
-            thumbnail_dimensions = Some((160, 90));
-        } else {
+            if cached_data.len() >= 8 {
+                let w = u32::from_le_bytes(cached_data[0..4].try_into().unwrap_or([0; 4]));
+                let h = u32::from_le_bytes(cached_data[4..8].try_into().unwrap_or([0; 4]));
+                let expected = (w * h * 4) as usize;
+                if w > 0 && h > 0 && cached_data.len() >= 8 + expected {
+                    thumbnail_dimensions = Some((w, h));
+                    thumbnail_rgba = Some(cached_data[8..8 + expected].to_vec());
+                }
+            }
+        }
+
+        if thumbnail_rgba.is_none() {
             // Seek to 0.5s or 0.0s for thumbnail
             let target_time = if probe_res.duration_seconds > 1.0 {
                 0.5
@@ -176,7 +185,11 @@ fn process_ingest_request(req: &IngestRequest, cache: &DiskCacheManager) -> Inge
                 0.0
             };
             if let Ok(img) = extract_thumbnail(&req.path, target_time, 160, 90) {
-                let _ = cache.put_thumbnail(&thumb_key, &img.data);
+                let mut payload = Vec::with_capacity(8 + img.data.len());
+                payload.extend_from_slice(&img.width.to_le_bytes());
+                payload.extend_from_slice(&img.height.to_le_bytes());
+                payload.extend_from_slice(&img.data);
+                let _ = cache.put_thumbnail(&thumb_key, &payload);
                 thumbnail_dimensions = Some((img.width, img.height));
                 thumbnail_rgba = Some(img.data);
             }

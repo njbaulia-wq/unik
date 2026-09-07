@@ -179,7 +179,18 @@ impl TimelineWidget {
     pub fn sync_from_project(&self, project: &Project) {
         let imp = self.imp();
         let proj_rc = imp.project_rc();
-        *proj_rc.borrow_mut() = project.clone();
+        // Avoid double borrow panic if proj_rc is already borrowed or pointing to the same instance
+        if let Ok(mut p) = proj_rc.try_borrow_mut() {
+            *p = project.clone();
+        }
+        self.notify_project_changed();
+        self.queue_resize();
+        self.queue_draw();
+    }
+
+    /// Refresh timeline layout and redraw view
+    pub fn refresh(&self) {
+        self.notify_project_changed();
         self.queue_resize();
         self.queue_draw();
     }

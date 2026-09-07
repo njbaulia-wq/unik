@@ -414,7 +414,7 @@ impl MainWindow {
         new_btn.connect_clicked(move |_| {
             *proj_new.borrow_mut() = Project::default();
             *hist_new.borrow_mut() = ProjectHistory::default();
-            tl_new.sync_from_project(&proj_new.borrow());
+            tl_new.refresh();
             toast_new.add_toast(adw::Toast::new("Created new project"));
         });
 
@@ -460,7 +460,7 @@ impl MainWindow {
                         match Project::load_from_file(&path) {
                             Ok(loaded) => {
                                 *p_ref.borrow_mut() = loaded;
-                                tl_ref.sync_from_project(&p_ref.borrow());
+                                tl_ref.refresh();
                                 t_ref.add_toast(adw::Toast::new("Project loaded successfully"));
                             }
                             Err(e) => {
@@ -484,7 +484,7 @@ impl MainWindow {
                 _ => CanvasRatio::Landscape16x9,
             };
             proj_ratio.borrow_mut().set_canvas_ratio(ratio);
-            tl_ratio.sync_from_project(&proj_ratio.borrow());
+            tl_ratio.refresh();
             toast_ratio.add_toast(adw::Toast::new(&format!(
                 "Canvas aspect ratio set to: {}",
                 ratio.label()
@@ -1192,24 +1192,30 @@ fn handle_ingest_response(
                 row.set_subtitle(&subtitle_parts.join(" • "));
 
                 // Replace spinner with thumbnail if available
+                let mut thumb_added = false;
                 if let (Some(rgba_bytes), Some((w, h))) =
                     (resp.thumbnail_rgba, resp.thumbnail_dimensions)
                 {
-                    let glib_bytes = glib::Bytes::from(&rgba_bytes);
-                    let texture = gdk::MemoryTexture::new(
-                        w as i32,
-                        h as i32,
-                        gdk::MemoryFormat::R8g8b8a8,
-                        &glib_bytes,
-                        (w * 4) as usize,
-                    );
-                    let picture = gtk4::Picture::for_paintable(&texture);
-                    picture.set_size_request(64, 36);
-                    picture.set_margin_start(4);
-                    picture.set_margin_end(8);
+                    let expected_size = (w * h * 4) as usize;
+                    if w > 0 && h > 0 && rgba_bytes.len() >= expected_size {
+                        let glib_bytes = glib::Bytes::from(&rgba_bytes[..expected_size]);
+                        let texture = gdk::MemoryTexture::new(
+                            w as i32,
+                            h as i32,
+                            gdk::MemoryFormat::R8g8b8a8,
+                            &glib_bytes,
+                            (w * 4) as usize,
+                        );
+                        let picture = gtk4::Picture::for_paintable(&texture);
+                        picture.set_size_request(64, 36);
+                        picture.set_margin_start(4);
+                        picture.set_margin_end(8);
 
-                    row.add_prefix(&picture);
-                } else {
+                        row.add_prefix(&picture);
+                        thumb_added = true;
+                    }
+                }
+                if !thumb_added {
                     let icon = gtk4::Image::from_icon_name("video-x-generic-symbolic");
                     row.add_prefix(&icon);
                 }
@@ -1266,7 +1272,7 @@ fn handle_ingest_response(
                     };
                     if let Ok(()) = p.add_clip(track_id, clip) {
                         drop(p);
-                        tl_add.sync_from_project(&proj_add.borrow());
+                        tl_add.refresh();
                         toast_add.add_toast(adw::Toast::new(&format!(
                             "Added '{}' to timeline",
                             title_add
@@ -1308,7 +1314,7 @@ fn handle_ingest_response(
                         };
                         let _ = p.add_clip(track_id, clip);
                         drop(p);
-                        timeline_widget.sync_from_project(&project.borrow());
+                        timeline_widget.refresh();
 
                         // Automatically load the clip into playback preview!
                         let _ = playback.load(path.clone());

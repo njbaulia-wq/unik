@@ -41,8 +41,13 @@ impl VideoPresentationBridge {
         self.last_frame_time = Some(now);
         self.frames_presented += 1;
 
-        let glib_bytes = glib::Bytes::from(frame.rgba_data.as_ref());
+        let expected_len = (frame.width * frame.height * 4) as usize;
         let stride = (frame.width * 4) as usize;
+        if frame.width == 0 || frame.height == 0 || frame.rgba_data.len() < expected_len {
+            return;
+        }
+
+        let glib_bytes = glib::Bytes::from(&frame.rgba_data[..expected_len]);
 
         let texture = gdk::MemoryTexture::new(
             frame.width as i32,
