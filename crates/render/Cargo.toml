@@ -1,0 +1,15 @@
+[package]
+name = "fluxcut-render"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+fluxcut-diagnostics.workspace = true
+fluxcut-hardware.workspace = true
+fluxcut-decode.workspace = true
+gtk4.workspace = true
+libadwaita.workspace = true
+thiserror.workspace = true
+tracing.workspace = true

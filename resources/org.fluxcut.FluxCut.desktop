@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=FluxCut
+Comment=Fast, native Linux video editor
+GenericName=Video Editor
+Exec=fluxcut %F
+Icon=org.fluxcut.FluxCut
+Terminal=false
+Type=Application
+Categories=AudioVideo;Video;AudioVideoEditing;
+MimeType=video/mp4;video/quicktime;video/x-matroska;video/webm;
+StartupNotify=true
+X-GNOME-UsesNotifications=true

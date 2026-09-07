@@ -1,0 +1,13 @@
+[package]
+name = "fluxcut-timeline"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+fluxcut-project = { workspace = true }
+gtk4 = { workspace = true }
+libadwaita = { workspace = true }
+tracing = { workspace = true }

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.fluxcut.FluxCut</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>FluxCut</name>
+  <summary>Lightweight, native Linux desktop video editor</summary>
+  <description>
+    <p>
+      FluxCut is a native Linux video editor designed for quick cuts, social media formatting,
+      and audio replacements without the overhead of heavy professional NLEs.
+    </p>
+    <ul>
+      <li>Instant timeline trimming, splitting, and gap deletion</li>
+      <li>Vertical video (9:16 Shorts/Reels), Square (1:1), and Landscape presets</li>
+      <li>Audio muting, track mixing, and background music layering</li>
+      <li>GPU-accelerated preview with DMA-BUF on Wayland and software fallback</li>
+      <li>Deterministic export with fast-path stream-copy when re-encoding is not required</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">org.fluxcut.FluxCut.desktop</launchable>
+  <provides>
+    <binary>fluxcut</binary>
+  </provides>
+  <developer_name>FluxCut Contributors</developer_name>
+  <url type="homepage">https://github.com/fluxcut/fluxcut</url>
+  <url type="bugtracker">https://github.com/fluxcut/fluxcut/issues</url>
+</component>

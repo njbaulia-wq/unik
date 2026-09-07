@@ -1,0 +1,21 @@
+[package]
+name = "fluxcut-app"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "fluxcut"
+path = "src/main.rs"
+
+[dependencies]
+fluxcut-diagnostics.workspace = true
+fluxcut-hardware.workspace = true
+fluxcut-project.workspace = true
+fluxcut-cache.workspace = true
+fluxcut-media.workspace = true
+fluxcut-ui.workspace = true
+gtk4.workspace = true
+libadwaita.workspace = true
+tracing.workspace = true

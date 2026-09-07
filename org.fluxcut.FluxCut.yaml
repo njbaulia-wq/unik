@@ -1,0 +1,46 @@
+app-id: org.fluxcut.FluxCut
+runtime: org.gnome.Platform
+runtime-version: '46'
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+  - org.freedesktop.Sdk.Extension.llvm17
+
+command: fluxcut
+
+finish-args:
+  # Wayland display and X11 fallback
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+  # Hardware acceleration and GPU access (Vulkan, VA-API, DMA-BUF)
+  - --device=dri
+  # Audio playback and monitor (PipeWire / PulseAudio)
+  - --socket=pulseaudio
+  # Host filesystem access for importing and exporting user media
+  - --filesystem=host
+  - --filesystem=xdg-videos
+  - --filesystem=xdg-pictures
+  - --filesystem=xdg-music
+  # Desktop portal notifications and file chooser integration
+  - --talk-name=org.freedesktop.portal.Desktop
+  - --talk-name=org.freedesktop.FileManager1
+
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/llvm17/bin
+  env:
+    CARGO_HOME: /run/build/fluxcut/cargo
+
+modules:
+  - name: fluxcut
+    buildsystem: simple
+    build-commands:
+      - cargo --offline fetch --manifest-path Cargo.toml
+      - cargo build --release --workspace
+      - install -Dm755 target/release/fluxcut /app/bin/fluxcut
+      - install -Dm644 resources/org.fluxcut.FluxCut.desktop /app/share/applications/org.fluxcut.FluxCut.desktop
+      - install -Dm644 resources/org.fluxcut.FluxCut.metainfo.xml /app/share/metainfo/org.fluxcut.FluxCut.metainfo.xml
+      - install -Dm644 resources/icons/hicolor/scalable/apps/org.fluxcut.FluxCut.svg /app/share/icons/hicolor/scalable/apps/org.fluxcut.FluxCut.svg
+    sources:
+      - type: dir
+        path: .

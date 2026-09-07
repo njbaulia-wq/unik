@@ -1,0 +1,16 @@
+[package]
+name = "fluxcut-decode"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+ffmpeg-next.workspace = true
+fluxcut-diagnostics.workspace = true
+fluxcut-ffmpeg-core.workspace = true
+fluxcut-project.workspace = true
+crossbeam-channel.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tracing.workspace = true

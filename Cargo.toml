@@ -1,0 +1,62 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/diagnostics",
+    "crates/hardware",
+    "crates/project",
+    "crates/cache",
+    "crates/ffmpeg-core",
+    "crates/media",
+    "crates/decode",
+    "crates/render",
+    "crates/timeline",
+    "crates/audio",
+    "crates/filters",
+    "crates/export",
+    "crates/ui",
+    "crates/app",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["FluxCut Contributors"]
+license = "GPL-3.0-or-later"
+repository = "https://github.com/fluxcut/fluxcut"
+
+[workspace.dependencies]
+# Internal workspace crates
+fluxcut-diagnostics = { path = "crates/diagnostics" }
+fluxcut-hardware = { path = "crates/hardware" }
+fluxcut-project = { path = "crates/project" }
+fluxcut-cache = { path = "crates/cache" }
+fluxcut-ffmpeg-core = { path = "crates/ffmpeg-core" }
+fluxcut-media = { path = "crates/media" }
+fluxcut-decode = { path = "crates/decode" }
+fluxcut-render = { path = "crates/render" }
+fluxcut-timeline = { path = "crates/timeline" }
+fluxcut-audio = { path = "crates/audio" }
+fluxcut-filters = { path = "crates/filters" }
+fluxcut-export = { path = "crates/export" }
+fluxcut-ui = { path = "crates/ui" }
+
+# Media Engine
+ffmpeg-next = "9.0.0"
+
+# Concurrency & Channels
+crossbeam-channel = "0.5"
+
+# Serialization & System Utilities
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+directories = "6.0"
+sha2 = "0.10"
+
+# Logging & Telemetry
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+# GNOME / GTK4 / Libadwaita
+gtk4 = { version = "0.11", features = ["v4_14"] }
+libadwaita = { version = "0.9", features = ["v1_5"] }

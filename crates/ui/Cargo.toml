@@ -1,0 +1,23 @@
+[package]
+name = "fluxcut-ui"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+fluxcut-diagnostics.workspace = true
+fluxcut-hardware.workspace = true
+fluxcut-project.workspace = true
+fluxcut-cache.workspace = true
+fluxcut-ffmpeg-core.workspace = true
+fluxcut-media.workspace = true
+fluxcut-decode.workspace = true
+fluxcut-render.workspace = true
+fluxcut-timeline.workspace = true
+fluxcut-export.workspace = true
+crossbeam-channel.workspace = true
+gtk4.workspace = true
+libadwaita.workspace = true
+tracing.workspace = true
+thiserror.workspace = true

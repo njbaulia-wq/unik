@@ -1,0 +1,21 @@
+[package]
+name = "fluxcut-export"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+fluxcut-project = { workspace = true }
+fluxcut-ffmpeg-core = { workspace = true }
+fluxcut-media = { workspace = true }
+fluxcut-audio = { workspace = true }
+fluxcut-filters = { workspace = true }
+ffmpeg-next = { workspace = true }
+crossbeam-channel = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+fluxcut-hardware = { workspace = true }

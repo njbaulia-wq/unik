@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e1e2e"/>
+      <stop offset="100%" stop-color="#11111b"/>
+    </linearGradient>
+    <linearGradient id="bladeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#89b4fa"/>
+      <stop offset="100%" stop-color="#04a5e5"/>
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f38ba8"/>
+      <stop offset="100%" stop-color="#cba6f7"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="4" stdDeviation="4" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+
+  <!-- Background Base Plate -->
+  <rect x="8" y="8" width="112" height="112" rx="28" fill="url(#bgGrad)" filter="url(#shadow)" stroke="#313244" stroke-width="2"/>
+
+  <!-- Filmstrip Frames (Left & Right) -->
+  <rect x="20" y="24" width="24" height="20" rx="4" fill="#313244"/>
+  <rect x="20" y="54" width="24" height="20" rx="4" fill="#313244"/>
+  <rect x="20" y="84" width="24" height="20" rx="4" fill="#313244"/>
+
+  <rect x="84" y="24" width="24" height="20" rx="4" fill="#313244"/>
+  <rect x="84" y="54" width="24" height="20" rx="4" fill="#313244"/>
+  <rect x="84" y="84" width="24" height="20" rx="4" fill="#313244"/>
+
+  <!-- Playhead & Razor Cut Slash -->
+  <polygon points="50,22 82,22 68,106 36,106" fill="url(#bladeGrad)" opacity="0.9"/>
+  <line x1="66" y1="16" x2="52" y2="112" stroke="url(#accentGrad)" stroke-width="4" stroke-linecap="round"/>
+</svg>

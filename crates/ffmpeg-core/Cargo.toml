@@ -1,0 +1,15 @@
+[package]
+name = "fluxcut-ffmpeg-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+ffmpeg-next.workspace = true
+fluxcut-diagnostics.workspace = true
+fluxcut-project.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
