@@ -96,7 +96,6 @@ impl TranscodeEngine {
                     {
                         a_ctx.set_rate(44100);
                         a_ctx.set_channel_layout(ffmpeg::channel_layout::ChannelLayout::STEREO);
-                        a_ctx.set_channels(2);
                         a_ctx.set_format(ffmpeg::format::Sample::F32(
                             ffmpeg::format::sample::Type::Planar,
                         ));
