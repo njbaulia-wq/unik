@@ -118,7 +118,7 @@ install_desktop_integration() {
 verify_installation() {
     echo ""
     if [ -x "${INSTALL_DIR}/${BIN_NAME}" ]; then
-        echo -e "${GREEN}${BOLD}✓ FluxCut successfully installed to: ${INSTALL_DIR}/${BIN_NAME}${NC}"
+        echo -e "${GREEN}${BOLD}✓ FluxCut binary installed to: ${INSTALL_DIR}/${BIN_NAME}${NC}"
         
         # Check PATH
         if [[ ":$PATH:" != *":${INSTALL_DIR}:"* ]]; then
@@ -127,12 +127,56 @@ verify_installation() {
             echo -e "  export PATH=\"\${HOME}/.local/bin:\$PATH\""
         fi
 
-        echo ""
-        echo -e "Run diagnostics to verify hardware acceleration:"
-        echo -e "  ${BOLD}fluxcut --diagnostics${NC}"
-        echo ""
-        echo -e "Launch FluxCut:"
-        echo -e "  ${BOLD}fluxcut${NC}"
+        # Check for missing shared libraries
+        MISSING_LIBS="$(ldd "${INSTALL_DIR}/${BIN_NAME}" 2>/dev/null | grep "not found" || true)"
+        if [ -n "${MISSING_LIBS}" ]; then
+            echo ""
+            echo -e "${YELLOW}${BOLD}[WARNING] Missing system shared libraries detected on this machine:${NC}"
+            echo "${MISSING_LIBS}" | sed 's/^/  /'
+            echo ""
+
+            DISTRO=""
+            if [ -f /etc/os-release ]; then
+                # shellcheck disable=SC1091
+                . /etc/os-release
+                DISTRO="${ID:-}"
+            fi
+
+            case "${DISTRO}" in
+                fedora)
+                    echo -e "${BLUE}${BOLD}==> Fix for Fedora Linux:${NC}"
+                    echo -e "The pre-built binary was linked with FFmpeg 6 (libavutil.so.58)."
+                    echo -e "Install compat-ffmpeg6-libs from RPM Fusion:"
+                    echo -e "  ${BOLD}sudo dnf install -y https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-\$(rpm -E %fedora).noarch.rpm${NC}"
+                    echo -e "  ${BOLD}sudo dnf install -y compat-ffmpeg6-libs${NC}"
+                    echo ""
+                    echo -e "Or build natively against Fedora's installed FFmpeg:"
+                    echo -e "  ${BOLD}sudo dnf install -y git gcc pkgconf-pkg-config gtk4-devel libadwaita-devel ffmpeg-free-devel clang${NC}"
+                    echo -e "  ${BOLD}cargo install --git https://github.com/${REPO}.git fluxcut-app${NC}"
+                    ;;
+                ubuntu|debian)
+                    echo -e "${BLUE}${BOLD}==> Fix for Ubuntu/Debian:${NC}"
+                    echo -e "Install missing runtime packages:"
+                    echo -e "  ${BOLD}sudo apt update && sudo apt install -y libgtk-4-1 libadwaita-1-0 libavcodec60 libavformat60 libavutil58 libswscale7 libavfilter9${NC}"
+                    ;;
+                arch|manjaro)
+                    echo -e "${BLUE}${BOLD}==> Fix for Arch Linux:${NC}"
+                    echo -e "Install runtime packages:"
+                    echo -e "  ${BOLD}sudo pacman -S --needed gtk4 libadwaita ffmpeg${NC}"
+                    ;;
+                *)
+                    echo -e "Please install the missing libraries using your distribution's package manager."
+                    ;;
+            esac
+            echo ""
+        else
+            echo ""
+            echo -e "Run diagnostics to verify hardware acceleration:"
+            echo -e "  ${BOLD}fluxcut --diagnostics${NC}"
+            echo ""
+            echo -e "Launch FluxCut:"
+            echo -e "  ${BOLD}fluxcut${NC}"
+        fi
     else
         echo -e "${RED}[ERROR] Installation verification failed.${NC}"
         exit 1

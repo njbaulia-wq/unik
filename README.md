@@ -32,6 +32,15 @@ Launch FluxCut:
 fluxcut
 ```
 
+> [!TIP]
+> **Fedora / RHEL Users:** If you see `error while loading shared libraries: libavutil.so.58`:
+> The pre-built release binary links with FFmpeg 6. Install the compatibility package from RPM Fusion:
+> ```bash
+> sudo dnf install -y https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm
+> sudo dnf install -y compat-ffmpeg6-libs
+> ```
+> Alternatively, install natively using `cargo install --git https://github.com/njbaulia-wq/unik.git fluxcut-app` or use **Flatpak**.
+
 ---
 
 ## 📦 Alternative Installation Methods
