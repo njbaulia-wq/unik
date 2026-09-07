@@ -12,95 +12,76 @@ Designed from the ground up for responsiveness, FluxCut adheres to strict archit
 
 ---
 
-## ⚡ Quick 1-Line Installation
+## ⚡ Installation Guide
 
-Install or update FluxCut on any modern Linux distribution with a single command:
+Choose the best method for your Linux distribution:
 
+### 🔹 Option 1: Ubuntu / Debian / Pop!_OS / Linux Mint
+Install the pre-built binary and desktop integration in one step:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/njbaulia-wq/unik/main/install.sh | bash
 ```
 
-> The universal installer automatically detects your architecture (`x86_64` or `aarch64`), installs the binary to `~/.local/bin/fluxcut`, registers desktop entry and AppStream metadata, and sets up high-resolution desktop application icons.
+---
 
-Verify the installation and hardware acceleration:
+### 🔹 Option 2: Fedora (Fedora 40, 41, 42, Rawhide)
+Fedora uses **FFmpeg 7** (`libavutil.so.59`) by default. To ensure 100% native Wayland, VA-API GPU acceleration, and perfect library compatibility, install natively with Cargo:
+
 ```bash
-fluxcut --diagnostics
+# 1. Install Fedora development libraries
+sudo dnf install -y gcc pkgconf-pkg-config gtk4-devel libadwaita-devel ffmpeg-free-devel clang
+
+# 2. Install FluxCut (compiled directly against Fedora's native FFmpeg)
+cargo install --git https://github.com/njbaulia-wq/unik.git fluxcut-app
 ```
 
-Launch FluxCut:
-```bash
-fluxcut
-```
-
-> [!TIP]
-> **Fedora / RHEL Users:** If you see `error while loading shared libraries: libavutil.so.58`:
-> The pre-built release binary links with FFmpeg 6. Install the compatibility package from RPM Fusion:
+> **Don't have Rust/Cargo installed yet?** Install it in 10 seconds:
 > ```bash
-> sudo dnf install -y https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm
-> sudo dnf install -y compat-ffmpeg6-libs
+> curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+> source "$HOME/.cargo/env"
 > ```
-> Alternatively, install natively using `cargo install --git https://github.com/njbaulia-wq/unik.git fluxcut-app` or use **Flatpak**.
+> *Or run the automated 1-line native installer:*
+> ```bash
+> curl -fsSL https://raw.githubusercontent.com/njbaulia-wq/unik/main/install.sh | bash -s -- --build
+> ```
 
 ---
 
-## 📦 Alternative Installation Methods
+### 🔹 Option 3: Arch Linux / Manjaro
+```bash
+# 1. Install development packages
+sudo pacman -S --needed base-devel pkgconf gtk4 libadwaita ffmpeg clang
 
-### 1. Flatpak (Recommended for Isolated Deployment)
+# 2. Install FluxCut via Cargo
+cargo install --git https://github.com/njbaulia-wq/unik.git fluxcut-app
+```
 
-FluxCut provides a Flatpak manifest targeting the GNOME 46 Platform runtime with sandboxed Wayland, DRI/Vulkan, and PulseAudio/PipeWire permissions.
+---
+
+### 🔹 Option 4: Flatpak (Universal Sandboxed App)
+Works identically across all distributions without touching host libraries:
 
 ```bash
-# Install flatpak and flatpak-builder if not already installed
-sudo apt install flatpak flatpak-builder  # Ubuntu/Debian
-# sudo dnf install flatpak flatpak-builder  # Fedora
-# sudo pacman -S flatpak flatpak-builder   # Arch Linux
-
-# Build and install Flatpak bundle
+# 1. Install flatpak-builder (e.g. sudo dnf install flatpak-builder / sudo apt install flatpak-builder)
+# 2. Clone and build Flatpak bundle:
+git clone https://github.com/njbaulia-wq/unik.git
+cd unik
 flatpak-builder --user --install --force-clean build-dir org.fluxcut.FluxCut.yaml
 
-# Run Flatpak
+# 3. Launch
 flatpak run org.fluxcut.FluxCut
 ```
 
-### 2. Native Build from Source
+---
 
-#### Prerequisites & System Libraries
-
-- **Ubuntu / Debian:**
-  ```bash
-  sudo apt update
-  sudo apt install -y build-essential pkg-config libgtk-4-dev libadwaita-1-dev \
-      libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libavfilter-dev \
-      libclang-dev libvulkan-dev libva-dev clang
-  ```
-
-- **Fedora:**
-  ```bash
-  sudo dnf install -y gcc pkgconf-pkg-config gtk4-devel libadwaita-devel \
-      ffmpeg-free-devel clang-devel vulkan-loader-devel libva-devel clang
-  ```
-
-- **Arch Linux:**
-  ```bash
-  sudo pacman -S --needed base-devel pkgconf gtk4 libadwaita ffmpeg clang vulkan-icd-loader libva
-  ```
-
-#### Compile and Run
-
-Ensure Rust 1.80+ is installed ([rustup.rs](https://rustup.rs)):
+## 🚀 Running FluxCut
 
 ```bash
-git clone https://github.com/njbaulia-wq/unik.git fluxcut
-cd fluxcut
+# Run diagnostics to inspect GPU / Wayland / VA-API capabilities
+fluxcut --diagnostics
 
-# Build optimized release binary
-cargo build --release --workspace
-
-# Run tests
-cargo test --workspace
-
-# Run FluxCut
-./target/release/fluxcut
+# Launch the editor
+fluxcut
 ```
 
 ---

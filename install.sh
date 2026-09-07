@@ -144,28 +144,32 @@ verify_installation() {
 
             case "${DISTRO}" in
                 fedora)
-                    echo -e "${BLUE}${BOLD}==> Fix for Fedora Linux:${NC}"
-                    echo -e "The pre-built binary was linked with FFmpeg 6 (libavutil.so.58)."
-                    echo -e "Install compat-ffmpeg6-libs from RPM Fusion:"
-                    echo -e "  ${BOLD}sudo dnf install -y https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-\$(rpm -E %fedora).noarch.rpm${NC}"
-                    echo -e "  ${BOLD}sudo dnf install -y compat-ffmpeg6-libs${NC}"
+                    echo -e "${BLUE}${BOLD}==> Recommended Solution for Fedora (Fedora 40, 41, 42, 44+):${NC}"
+                    echo -e "Fedora ships with FFmpeg 7 (libavutil.so.59), whereas Ubuntu binary links to FFmpeg 6 (libavutil.so.58)."
+                    echo -e "To compile and install FluxCut natively with full GPU & Wayland acceleration:"
                     echo ""
-                    echo -e "Or build natively against Fedora's installed FFmpeg:"
-                    echo -e "  ${BOLD}sudo dnf install -y git gcc pkgconf-pkg-config gtk4-devel libadwaita-devel ffmpeg-free-devel clang${NC}"
-                    echo -e "  ${BOLD}cargo install --git https://github.com/${REPO}.git fluxcut-app${NC}"
+                    echo -e "  ${BOLD}1. Install Fedora development packages:${NC}"
+                    echo -e "     sudo dnf install -y gcc pkgconf-pkg-config gtk4-devel libadwaita-devel ffmpeg-free-devel clang"
+                    echo ""
+                    echo -e "  ${BOLD}2. Compile & install FluxCut via cargo:${NC}"
+                    echo -e "     cargo install --git https://github.com/${REPO}.git fluxcut-app"
+                    echo ""
+                    echo -e "  ${BOLD}Or run 1-line native installer:${NC}"
+                    echo -e "     curl -fsSL https://raw.githubusercontent.com/${REPO}/main/install.sh | bash -s -- --build"
                     ;;
                 ubuntu|debian)
-                    echo -e "${BLUE}${BOLD}==> Fix for Ubuntu/Debian:${NC}"
+                    echo -e "${BLUE}${BOLD}==> Solution for Ubuntu/Debian:${NC}"
                     echo -e "Install missing runtime packages:"
                     echo -e "  ${BOLD}sudo apt update && sudo apt install -y libgtk-4-1 libadwaita-1-0 libavcodec60 libavformat60 libavutil58 libswscale7 libavfilter9${NC}"
                     ;;
                 arch|manjaro)
-                    echo -e "${BLUE}${BOLD}==> Fix for Arch Linux:${NC}"
-                    echo -e "Install runtime packages:"
-                    echo -e "  ${BOLD}sudo pacman -S --needed gtk4 libadwaita ffmpeg${NC}"
+                    echo -e "${BLUE}${BOLD}==> Solution for Arch Linux:${NC}"
+                    echo -e "Install development libraries and compile natively:"
+                    echo -e "  ${BOLD}sudo pacman -S --needed base-devel pkgconf gtk4 libadwaita ffmpeg clang${NC}"
+                    echo -e "  ${BOLD}cargo install --git https://github.com/${REPO}.git fluxcut-app${NC}"
                     ;;
                 *)
-                    echo -e "Please install the missing libraries using your distribution's package manager."
+                    echo -e "Please install missing libraries or run with: ${BOLD}bash -s -- --build${NC}"
                     ;;
             esac
             echo ""
@@ -183,10 +187,48 @@ verify_installation() {
     fi
 }
 
+install_from_source() {
+    echo -e "${BLUE}==>${NC} Building FluxCut natively from source..."
+    if ! command -v cargo >/dev/null 2>&1; then
+        echo -e "${YELLOW}[INFO] Rust/Cargo not found. Installing Rust via rustup...${NC}"
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+        # shellcheck disable=SC1091
+        source "${HOME}/.cargo/env" 2>/dev/null || true
+        export PATH="${HOME}/.cargo/bin:${PATH}"
+    fi
+
+    echo -e "${BLUE}==>${NC} Compiling fluxcut-app via cargo (links to your system's native FFmpeg & GTK4)..."
+    cargo install --git "https://github.com/${REPO}.git" fluxcut-app --root "${HOME}/.local"
+    echo -e "${GREEN}${BOLD}✓ Native build & installation completed!${NC}"
+}
+
 main() {
     print_banner
     check_platform
-    install_from_release
+
+    BUILD_FROM_SOURCE=false
+    for arg in "$@"; do
+        case "${arg}" in
+            --build|--source|-b)
+                BUILD_FROM_SOURCE=true
+                ;;
+            --help|-h)
+                echo "Usage: install.sh [OPTIONS]"
+                echo ""
+                echo "Options:"
+                echo "  --build, --source, -b    Build natively from source via cargo (recommended for Fedora 40+, Arch, etc.)"
+                echo "  --help, -h               Show this help message"
+                exit 0
+                ;;
+        esac
+    done
+
+    if [ "${BUILD_FROM_SOURCE}" = true ]; then
+        install_from_source
+    else
+        install_from_release
+    fi
+
     install_desktop_integration
     verify_installation
 }
