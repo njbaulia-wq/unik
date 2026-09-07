@@ -14,36 +14,27 @@ Designed from the ground up for responsiveness, FluxCut adheres to strict archit
 
 ## ⚡ Installation Guide
 
-Choose the best method for your Linux distribution:
-
-### 🔹 Option 1: Ubuntu / Debian / Pop!_OS / Linux Mint
-Install the pre-built binary and desktop integration in one step:
+### 🚀 Universal 1-Line Installer (Recommended)
+Install FluxCut on any modern Linux distribution with a single command:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/njbaulia-wq/unik/main/install.sh | bash
 ```
+> **Self-Healing & Distro-Adaptive:** The installer automatically detects your distribution (Fedora, Ubuntu, Debian, Arch) and architecture. On systems with differing FFmpeg versions (like Fedora using FFmpeg 7), it automatically resolves dependencies and ensures full native hardware acceleration.
 
 ---
 
-### 🔹 Option 2: Fedora (Fedora 40, 41, 42, Rawhide)
-Fedora uses **FFmpeg 7** (`libavutil.so.59`) by default. To ensure 100% native Wayland, VA-API GPU acceleration, and perfect library compatibility, install natively with Cargo:
+### 📦 Manual Distro Instructions
 
+#### 🔹 Fedora (Fedora 40, 41, 42, Rawhide)
+To build natively using Fedora's system libraries:
 ```bash
-# 1. Install Fedora development libraries
+# 1. Install development packages
 sudo dnf install -y gcc pkgconf-pkg-config gtk4-devel libadwaita-devel ffmpeg-free-devel clang
 
-# 2. Install FluxCut (compiled directly against Fedora's native FFmpeg)
+# 2. Install FluxCut via Cargo
 cargo install --git https://github.com/njbaulia-wq/unik.git fluxcut-app
 ```
-
-> **Don't have Rust/Cargo installed yet?** Install it in 10 seconds:
-> ```bash
-> curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-> source "$HOME/.cargo/env"
-> ```
-> *Or run the automated 1-line native installer:*
-> ```bash
-> curl -fsSL https://raw.githubusercontent.com/njbaulia-wq/unik/main/install.sh | bash -s -- --build
-> ```
+*(If Rust/Cargo is not installed: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && source "$HOME/.cargo/env"`)*
 
 ---
 
