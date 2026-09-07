@@ -8,7 +8,7 @@ pub mod monitor;
 pub mod waveform;
 
 pub use mixer::{AudioMixer, AudioSourceSlice};
-pub use monitor::AudioMonitor;
+pub use monitor::{AudioMonitor, AudioSinkHandle};
 pub use waveform::{WaveformBar, WaveformDownsampler};
 
 #[cfg(test)]

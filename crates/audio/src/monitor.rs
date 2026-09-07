@@ -196,11 +196,61 @@ impl AudioMonitor {
         }
     }
 
+    /// Get a direct AudioSink handle for low-latency playback decoding.
+    pub fn sink_handle(&self) -> Arc<dyn fluxcut_decode::AudioSink> {
+        Arc::new(AudioSinkHandle {
+            buffer: Arc::clone(&self.buffer),
+            sample_rate: self.sample_rate,
+            channels: self.channels,
+            is_active: Arc::clone(&self.is_active),
+        })
+    }
+
     pub fn sample_rate(&self) -> u32 {
         self.sample_rate
     }
 
     pub fn channels(&self) -> u16 {
+        self.channels
+    }
+}
+
+/// Direct thread-safe sink handle implementing fluxcut_decode::AudioSink.
+#[derive(Clone)]
+pub struct AudioSinkHandle {
+    buffer: Arc<Mutex<VecDeque<f32>>>,
+    sample_rate: u32,
+    channels: u16,
+    is_active: Arc<AtomicBool>,
+}
+
+impl fluxcut_decode::AudioSink for AudioSinkHandle {
+    fn push_samples(&self, samples: &[f32]) {
+        if !self.is_active.load(Ordering::Relaxed) {
+            return;
+        }
+        let max_samples = (self.sample_rate as usize * self.channels as usize * 3).max(96000);
+        if let Ok(mut q) = self.buffer.lock() {
+            if q.len() + samples.len() > max_samples {
+                let overflow = (q.len() + samples.len()) - max_samples;
+                let to_drain = overflow.min(q.len());
+                q.drain(..to_drain);
+            }
+            q.extend(samples.iter().copied());
+        }
+    }
+
+    fn clear(&self) {
+        if let Ok(mut q) = self.buffer.lock() {
+            q.clear();
+        }
+    }
+
+    fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
+
+    fn channels(&self) -> u16 {
         self.channels
     }
 }

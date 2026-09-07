@@ -83,8 +83,9 @@ impl MainWindow {
 
         // Initialize background video playback controller
         let playback = Rc::new(PlaybackController::new());
-        // Initialize real-time audio playback monitor via cpal
         let audio_monitor = Rc::new(AudioMonitor::new());
+        // Attach direct audio output sink to background playback worker for low-latency A/V monitoring
+        let _ = playback.attach_audio_sink(audio_monitor.sink_handle());
 
         let window = adw::ApplicationWindow::builder()
             .application(app)
@@ -1138,7 +1139,7 @@ fn dispatch_media_import(
                 modified_timestamp: asset.modified_timestamp,
                 file_size: asset.file_size_bytes,
                 extract_thumbnail: true,
-                extract_waveform: true,
+                extract_waveform: false,
             };
 
             if let Err(e) = worker.submit(req) {
@@ -1246,7 +1247,12 @@ fn handle_ingest_response(
                     let mut p = proj_add.borrow_mut();
                     hist_add.borrow_mut().commit(&p, "Add Clip to Timeline");
                     let track_id = if has_video { "track-v1" } else { "track-a1" };
-                    let start_pos = p.total_duration();
+                    let start_pos = p
+                        .tracks
+                        .iter()
+                        .find(|t| t.id == track_id)
+                        .and_then(|t| t.clips.iter().map(|c| c.timeline_end()).max())
+                        .unwrap_or(TimeRational::ZERO);
                     let clip = ClipDefinition {
                         id: format!("clip_{}_{}", asset_id_add, p.total_duration().num),
                         asset_id: asset_id_add.clone(),

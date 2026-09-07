@@ -10,15 +10,40 @@ use std::thread;
 use std::time::{Duration, Instant};
 use tracing::info;
 
+/// Direct audio sink interface for real-time audio playback without GTK thread blocking.
+pub trait AudioSink: Send + Sync + 'static {
+    fn push_samples(&self, samples: &[f32]);
+    fn clear(&self);
+    fn sample_rate(&self) -> u32;
+    fn channels(&self) -> u16;
+}
+
 /// Commands sent to the playback worker.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum PlaybackCommand {
     Load(PathBuf),
     Play { speed: f64 },
     Pause,
     Seek { timestamp_sec: f64 },
     StepFrame { forward: bool },
+    AttachAudioSink(Arc<dyn AudioSink>),
     Close,
+}
+
+impl std::fmt::Debug for PlaybackCommand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Load(p) => write!(f, "Load({:?})", p),
+            Self::Play { speed } => write!(f, "Play {{ speed: {} }}", speed),
+            Self::Pause => write!(f, "Pause"),
+            Self::Seek { timestamp_sec } => {
+                write!(f, "Seek {{ timestamp_sec: {} }}", timestamp_sec)
+            }
+            Self::StepFrame { forward } => write!(f, "StepFrame {{ forward: {} }}", forward),
+            Self::AttachAudioSink(_) => write!(f, "AttachAudioSink"),
+            Self::Close => write!(f, "Close"),
+        }
+    }
 }
 
 /// Events emitted from playback worker to the UI / presentation layer.
@@ -107,6 +132,11 @@ impl PlaybackController {
         self.send_cmd(PlaybackCommand::StepFrame { forward })
     }
 
+    /// Attach direct audio output sink for low-latency, zero-main-thread audio monitoring.
+    pub fn attach_audio_sink(&self, sink: Arc<dyn AudioSink>) -> Result<(), String> {
+        self.send_cmd(PlaybackCommand::AttachAudioSink(sink))
+    }
+
     pub fn try_recv(&self) -> Option<PlaybackEvent> {
         self.event_rx.try_recv().ok()
     }
@@ -158,6 +188,7 @@ struct DecodeWorkerState {
     audio_decoder: Option<ffmpeg::decoder::Audio>,
     audio_resampler: Option<ffmpeg::software::resampling::Context>,
     audio_stream_index: Option<usize>,
+    audio_sink: Option<Arc<dyn AudioSink>>,
 }
 
 impl DecodeWorkerState {
@@ -183,6 +214,7 @@ impl DecodeWorkerState {
             audio_decoder: None,
             audio_resampler: None,
             audio_stream_index: None,
+            audio_sink: None,
         }
     }
 
@@ -233,8 +265,42 @@ impl DecodeWorkerState {
                     .event_tx
                     .send(PlaybackEvent::StateChanged(PlaybackState::Playing));
             }
+            PlaybackCommand::AttachAudioSink(sink) => {
+                self.audio_sink = Some(sink);
+                // Reconfigure audio resampler if audio decoder already active
+                if let Some(ref adec) = self.audio_decoder {
+                    let in_fmt = adec.format();
+                    let in_layout = if adec.channel_layout().is_empty() {
+                        ffmpeg::ChannelLayout::default(adec.channels() as i32)
+                    } else {
+                        adec.channel_layout()
+                    };
+                    let in_rate = adec.rate();
+                    if let Some(ref s) = self.audio_sink {
+                        let r = s.sample_rate();
+                        let ch = s.channels();
+                        let layout = if ch == 1 {
+                            ffmpeg::ChannelLayout::MONO
+                        } else {
+                            ffmpeg::ChannelLayout::STEREO
+                        };
+                        self.audio_resampler = ffmpeg::software::resampling::Context::get(
+                            in_fmt,
+                            in_layout,
+                            in_rate,
+                            ffmpeg::format::Sample::F32(ffmpeg::format::sample::Type::Packed),
+                            layout,
+                            r,
+                        )
+                        .ok();
+                    }
+                }
+            }
             PlaybackCommand::Pause => {
                 self.is_playing = false;
+                if let Some(ref sink) = self.audio_sink {
+                    sink.clear();
+                }
                 let _ = self
                     .event_tx
                     .send(PlaybackEvent::StateChanged(PlaybackState::Paused));
@@ -251,6 +317,9 @@ impl DecodeWorkerState {
             }
             PlaybackCommand::StepFrame { forward } => {
                 self.is_playing = false;
+                if let Some(ref sink) = self.audio_sink {
+                    sink.clear();
+                }
                 let delta = if forward {
                     1.0 / self.fps
                 } else {
@@ -269,6 +338,9 @@ impl DecodeWorkerState {
                 self.audio_decoder = None;
                 self.audio_resampler = None;
                 self.audio_stream_index = None;
+                if let Some(ref sink) = self.audio_sink {
+                    sink.clear();
+                }
                 self.is_playing = false;
                 let _ = self
                     .event_tx
@@ -290,12 +362,24 @@ impl DecodeWorkerState {
                     } else {
                         30.0
                     };
-                    let duration_sec = if stream.duration() > 0 {
+                    let mut duration_sec = if stream.duration() > 0 && tb.denominator() > 0 {
                         (stream.duration() as f64) * (tb.numerator() as f64)
                             / (tb.denominator() as f64)
-                    } else {
+                    } else if ictx.duration() > 0 {
                         (ictx.duration() as f64) / (ffmpeg::ffi::AV_TIME_BASE as f64)
+                    } else {
+                        0.0
                     };
+                    for s in ictx.streams() {
+                        let s_tb = s.time_base();
+                        if s.duration() > 0 && s_tb.denominator() > 0 {
+                            let d = (s.duration() as f64) * (s_tb.numerator() as f64)
+                                / (s_tb.denominator() as f64);
+                            if d > duration_sec {
+                                duration_sec = d;
+                            }
+                        }
+                    }
 
                     match ffmpeg::codec::context::Context::from_parameters(stream.parameters())
                         .and_then(|c| c.decoder().video())
@@ -332,7 +416,7 @@ impl DecodeWorkerState {
                             )
                             .ok();
 
-                            // Initialize audio decoder and stereo f32 resampler if stream exists
+                            // Initialize audio decoder and stereo f32 resampler matching audio sink device
                             let mut audio_dec = None;
                             let mut audio_resamp = None;
                             let mut audio_idx = None;
@@ -351,6 +435,20 @@ impl DecodeWorkerState {
                                         };
                                         let in_rate = adec.rate();
 
+                                        let (target_rate, target_layout) =
+                                            if let Some(ref sink) = self.audio_sink {
+                                                let r = sink.sample_rate();
+                                                let ch = sink.channels();
+                                                let layout = if ch == 1 {
+                                                    ffmpeg::ChannelLayout::MONO
+                                                } else {
+                                                    ffmpeg::ChannelLayout::STEREO
+                                                };
+                                                (r, layout)
+                                            } else {
+                                                (44100, ffmpeg::ChannelLayout::STEREO)
+                                            };
+
                                         let resampler = ffmpeg::software::resampling::Context::get(
                                             in_fmt,
                                             in_layout,
@@ -358,8 +456,8 @@ impl DecodeWorkerState {
                                             ffmpeg::format::Sample::F32(
                                                 ffmpeg::format::sample::Type::Packed,
                                             ),
-                                            ffmpeg::ChannelLayout::STEREO,
-                                            44100,
+                                            target_layout,
+                                            target_rate,
                                         )
                                         .ok();
 
@@ -433,6 +531,9 @@ impl DecodeWorkerState {
         if let Some(ref mut adec) = self.audio_decoder {
             adec.flush();
         }
+        if let Some(ref sink) = self.audio_sink {
+            sink.clear();
+        }
 
         let _ = self.event_tx.send(PlaybackEvent::Seeked { timestamp_sec });
 
@@ -488,6 +589,17 @@ impl DecodeWorkerState {
 
         let mut decoded_frame = ffmpeg::util::frame::Video::empty();
 
+        // 1. First drain any already-decoded frame waiting in the decoder buffer
+        if decoder.receive_frame(&mut decoded_frame).is_ok() {
+            let frame_pts = decoded_frame.pts().unwrap_or(0) as f64 * (tb.numerator() as f64)
+                / (tb.denominator() as f64);
+
+            self.current_pts_sec = frame_pts;
+            Self::emit_frame_internal(&mut self.scaler, &self.event_tx, frame_pts, &decoded_frame);
+            return true;
+        }
+
+        // 2. Read packets from container
         for (stream, packet) in ictx.packets() {
             let s_idx = stream.index();
             if s_idx == target_stream {
@@ -514,6 +626,7 @@ impl DecodeWorkerState {
                         while adec.receive_frame(&mut a_frame).is_ok() {
                             Self::emit_audio_internal(
                                 &mut self.audio_resampler,
+                                &self.audio_sink,
                                 &self.event_tx,
                                 &a_frame,
                             );
@@ -523,9 +636,12 @@ impl DecodeWorkerState {
             }
         }
 
-        // Flush decoder
+        // 3. Flush decoder on EOF
         let _ = decoder.send_eof();
         if decoder.receive_frame(&mut decoded_frame).is_ok() {
+            let frame_pts = decoded_frame.pts().unwrap_or(0) as f64 * (tb.numerator() as f64)
+                / (tb.denominator() as f64);
+            self.current_pts_sec = frame_pts;
             Self::emit_frame_internal(
                 &mut self.scaler,
                 &self.event_tx,
@@ -572,6 +688,7 @@ impl DecodeWorkerState {
 
     fn emit_audio_internal(
         resampler: &mut Option<ffmpeg::software::resampling::Context>,
+        audio_sink: &Option<Arc<dyn AudioSink>>,
         event_tx: &Sender<PlaybackEvent>,
         frame: &ffmpeg::util::frame::Audio,
     ) {
@@ -582,7 +699,7 @@ impl DecodeWorkerState {
 
         let mut resampled = ffmpeg::util::frame::Audio::empty();
         if resampler.run(frame, &mut resampled).is_ok() {
-            let total_samples = resampled.samples() * 2; // stereo packed
+            let total_samples = resampled.samples() * resampled.channels() as usize;
             let plane = resampled.data(0);
             let floats: Vec<f32> = plane
                 .as_chunks::<4>()
@@ -592,7 +709,11 @@ impl DecodeWorkerState {
                 .map(|b| f32::from_le_bytes(*b))
                 .collect();
             if !floats.is_empty() {
-                let _ = event_tx.send(PlaybackEvent::AudioSamples(floats));
+                if let Some(ref sink) = audio_sink {
+                    sink.push_samples(&floats);
+                } else {
+                    let _ = event_tx.send(PlaybackEvent::AudioSamples(floats));
+                }
             }
         }
     }

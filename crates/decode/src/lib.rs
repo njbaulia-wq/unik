@@ -7,4 +7,4 @@ pub mod frame;
 pub mod worker;
 
 pub use frame::DecodedVideoFrame;
-pub use worker::{PlaybackCommand, PlaybackController, PlaybackEvent, PlaybackState};
+pub use worker::{AudioSink, PlaybackCommand, PlaybackController, PlaybackEvent, PlaybackState};

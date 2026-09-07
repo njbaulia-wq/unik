@@ -65,7 +65,7 @@ pub fn probe_file(path: &Path) -> Result<MediaProbeResult, FfmpegCoreError> {
     })?;
 
     let format_name = ictx.format().name().to_string();
-    let duration_seconds = if ictx.duration() > 0 {
+    let mut duration_seconds = if ictx.duration() > 0 {
         (ictx.duration() as f64) / (ffmpeg::ffi::AV_TIME_BASE as f64)
     } else {
         0.0
@@ -86,8 +86,13 @@ pub fn probe_file(path: &Path) -> Result<MediaProbeResult, FfmpegCoreError> {
         let tb = stream.time_base();
         let time_base = TimeRational::new(tb.numerator() as i64, tb.denominator().max(1) as u32);
 
-        let stream_dur = if stream.duration() > 0 {
-            Some((stream.duration() as f64) * (tb.numerator() as f64) / (tb.denominator() as f64))
+        let stream_dur = if stream.duration() > 0 && tb.denominator() > 0 {
+            let d =
+                (stream.duration() as f64) * (tb.numerator() as f64) / (tb.denominator() as f64);
+            if d > duration_seconds || duration_seconds <= 0.001 {
+                duration_seconds = d;
+            }
+            Some(d)
         } else {
             None
         };

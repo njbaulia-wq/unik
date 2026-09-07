@@ -20,8 +20,8 @@ mod imp {
     use super::*;
 
     pub struct TimelineWidget {
-        pub project: Rc<RefCell<Project>>,
-        pub history: Rc<RefCell<ProjectHistory>>,
+        pub project: RefCell<Rc<RefCell<Project>>>,
+        pub history: RefCell<Rc<RefCell<ProjectHistory>>>,
         pub coords: Rc<RefCell<TimelineCoords>>,
         pub state: Rc<RefCell<TimelineInteractionState>>,
         pub playhead_time: Rc<Cell<TimeRational>>,
@@ -33,8 +33,8 @@ mod imp {
     impl Default for TimelineWidget {
         fn default() -> Self {
             Self {
-                project: Rc::new(RefCell::new(Project::default())),
-                history: Rc::new(RefCell::new(ProjectHistory::default())),
+                project: RefCell::new(Rc::new(RefCell::new(Project::default()))),
+                history: RefCell::new(Rc::new(RefCell::new(ProjectHistory::default()))),
                 coords: Rc::new(RefCell::new(TimelineCoords::default())),
                 state: Rc::new(RefCell::new(TimelineInteractionState::default())),
                 playhead_time: Rc::new(Cell::new(TimeRational::ZERO)),
@@ -42,6 +42,16 @@ mod imp {
                 selection_callbacks: Rc::new(RefCell::new(Vec::new())),
                 project_callbacks: Rc::new(RefCell::new(Vec::new())),
             }
+        }
+    }
+
+    impl TimelineWidget {
+        pub fn project_rc(&self) -> Rc<RefCell<Project>> {
+            self.project.borrow().clone()
+        }
+
+        pub fn history_rc(&self) -> Rc<RefCell<ProjectHistory>> {
+            self.history.borrow().clone()
         }
     }
 
@@ -75,7 +85,8 @@ mod imp {
             }
 
             let pango_ctx = widget.pango_context();
-            let project = self.project.borrow();
+            let proj_rc = self.project_rc();
+            let project = proj_rc.borrow();
             let coords = self.coords.borrow();
             let state = self.state.borrow();
             let playhead = self.playhead_time.get();
@@ -94,7 +105,8 @@ mod imp {
         }
 
         fn measure(&self, orientation: gtk4::Orientation, _for_size: i32) -> (i32, i32, i32, i32) {
-            let project = self.project.borrow();
+            let proj_rc = self.project_rc();
+            let project = proj_rc.borrow();
             let coords = self.coords.borrow();
 
             match orientation {
@@ -135,7 +147,7 @@ impl TimelineWidget {
     pub fn with_project(project: Rc<RefCell<Project>>) -> Self {
         let widget: Self = glib::Object::builder().build();
         let imp = widget.imp();
-        imp.project.replace(project.borrow().clone());
+        *imp.project.borrow_mut() = project;
         widget.setup_controllers();
         widget
     }
@@ -147,16 +159,27 @@ impl TimelineWidget {
         history: Rc<RefCell<ProjectHistory>>,
     ) {
         let imp = self.imp();
-        imp.project.replace(project.borrow().clone());
-        imp.history.replace(history.borrow().clone());
+        *imp.project.borrow_mut() = project;
+        *imp.history.borrow_mut() = history;
         self.queue_resize();
         self.queue_draw();
+    }
+
+    /// Return reference to the active shared project
+    pub fn project_ref(&self) -> Rc<RefCell<Project>> {
+        self.imp().project_rc()
+    }
+
+    /// Return reference to the active shared history
+    pub fn history_ref(&self) -> Rc<RefCell<ProjectHistory>> {
+        self.imp().history_rc()
     }
 
     /// Synchronize external project changes into timeline
     pub fn sync_from_project(&self, project: &Project) {
         let imp = self.imp();
-        *imp.project.borrow_mut() = project.clone();
+        let proj_rc = imp.project_rc();
+        *proj_rc.borrow_mut() = project.clone();
         self.queue_resize();
         self.queue_draw();
     }
@@ -189,7 +212,7 @@ impl TimelineWidget {
 
     pub fn zoom_fit(&self) {
         let imp = self.imp();
-        let dur = imp.project.borrow().total_duration().to_seconds();
+        let dur = imp.project_rc().borrow().total_duration().to_seconds();
         let available_w = (self.width() as f32 - imp.coords.borrow().header_width).max(100.0);
         let new_px = if dur > 0.05 {
             (available_w / (dur as f32 * 1.1)).clamp(5.0, 2000.0)
@@ -204,7 +227,9 @@ impl TimelineWidget {
     pub fn split_at_playhead(&self) -> bool {
         let imp = self.imp();
         let playhead = imp.playhead_time.get();
-        let mut proj = imp.project.borrow_mut();
+        let proj_rc = imp.project_rc();
+        let hist_rc = imp.history_rc();
+        let mut proj = proj_rc.borrow_mut();
 
         // 1. If a clip is selected, try splitting it
         let target_clip_id = imp.state.borrow().selected_clip_id.clone();
@@ -233,7 +258,7 @@ impl TimelineWidget {
         };
 
         if let Some(clip_id) = clip_to_split {
-            imp.history.borrow_mut().commit(&proj, "Split Clip");
+            hist_rc.borrow_mut().commit(&proj, "Split Clip");
             if let Ok((_head, tail)) = proj.split_clip(&clip_id, playhead) {
                 info!(clip_id = %clip_id, split_at = %playhead, "Split clip at playhead");
                 drop(proj);
@@ -251,8 +276,10 @@ impl TimelineWidget {
         let imp = self.imp();
         let sel_id = imp.state.borrow().selected_clip_id.clone();
         if let Some(clip_id) = sel_id {
-            let mut proj = imp.project.borrow_mut();
-            imp.history.borrow_mut().commit(&proj, "Delete Clip");
+            let proj_rc = imp.project_rc();
+            let hist_rc = imp.history_rc();
+            let mut proj = proj_rc.borrow_mut();
+            hist_rc.borrow_mut().commit(&proj, "Delete Clip");
             if proj.remove_clip(&clip_id).is_ok() {
                 info!(clip_id = %clip_id, "Deleted clip");
                 drop(proj);
@@ -271,8 +298,10 @@ impl TimelineWidget {
         let imp = self.imp();
         let sel_id = imp.state.borrow().selected_clip_id.clone();
         if let Some(clip_id) = sel_id {
-            let mut proj = imp.project.borrow_mut();
-            imp.history.borrow_mut().commit(&proj, "Ripple Delete Clip");
+            let proj_rc = imp.project_rc();
+            let hist_rc = imp.history_rc();
+            let mut proj = proj_rc.borrow_mut();
+            hist_rc.borrow_mut().commit(&proj, "Ripple Delete Clip");
             if proj.ripple_delete_clip(&clip_id).is_ok() {
                 info!(clip_id = %clip_id, "Ripple deleted clip");
                 drop(proj);
@@ -291,13 +320,15 @@ impl TimelineWidget {
     pub fn toggle_mute_selected(&self) -> Option<bool> {
         let imp = self.imp();
         let clip_id = imp.state.borrow().selected_clip_id.clone()?;
-        let mut proj = imp.project.borrow_mut();
+        let proj_rc = imp.project_rc();
+        let hist_rc = imp.history_rc();
+        let mut proj = proj_rc.borrow_mut();
         for track in &mut proj.tracks {
             for clip in &mut track.clips {
                 if clip.id == clip_id {
                     clip.muted = !clip.muted;
                     let is_muted = clip.muted;
-                    imp.history.borrow_mut().commit(
+                    hist_rc.borrow_mut().commit(
                         &proj,
                         if is_muted {
                             "Mute Clip Audio"
@@ -321,7 +352,8 @@ impl TimelineWidget {
         let Some(clip_id) = imp.state.borrow().selected_clip_id.clone() else {
             return false;
         };
-        let mut proj = imp.project.borrow_mut();
+        let proj_rc = imp.project_rc();
+        let mut proj = proj_rc.borrow_mut();
         for track in &mut proj.tracks {
             for clip in &mut track.clips {
                 if clip.id == clip_id {
@@ -338,8 +370,10 @@ impl TimelineWidget {
 
     pub fn undo(&self) -> bool {
         let imp = self.imp();
-        let mut proj = imp.project.borrow_mut();
-        if imp.history.borrow_mut().undo(&mut proj) {
+        let proj_rc = imp.project_rc();
+        let hist_rc = imp.history_rc();
+        let mut proj = proj_rc.borrow_mut();
+        if hist_rc.borrow_mut().undo(&mut proj) {
             drop(proj);
             imp.state.borrow_mut().selected_clip_id = None;
             self.notify_project_changed();
@@ -352,8 +386,10 @@ impl TimelineWidget {
 
     pub fn redo(&self) -> bool {
         let imp = self.imp();
-        let mut proj = imp.project.borrow_mut();
-        if imp.history.borrow_mut().redo(&mut proj) {
+        let proj_rc = imp.project_rc();
+        let hist_rc = imp.history_rc();
+        let mut proj = proj_rc.borrow_mut();
+        if hist_rc.borrow_mut().redo(&mut proj) {
             drop(proj);
             imp.state.borrow_mut().selected_clip_id = None;
             self.notify_project_changed();
@@ -407,7 +443,8 @@ impl TimelineWidget {
         click_gesture.connect_pressed(move |gesture, _n_press, x, y| {
             let imp = widget_ref.imp();
             let coords = *imp.coords.borrow();
-            let proj = imp.project.borrow();
+            let proj_rc = imp.project_rc();
+            let proj = proj_rc.borrow();
             let hit = imp
                 .state
                 .borrow()
@@ -501,7 +538,8 @@ impl TimelineWidget {
                     let start_point = gesture.start_point().unwrap_or((0.0, 0.0));
                     let current_x = (start_point.0 + offset_x) as f32;
                     let target_time = coords.x_to_time(current_x);
-                    let proj = imp.project.borrow();
+                    let proj_rc = imp.project_rc();
+                    let proj = proj_rc.borrow();
                     let threshold = coords.snap_threshold_time(10.0);
                     let snapped = proj.snap_time(target_time, threshold, None);
                     drop(proj);
@@ -518,7 +556,8 @@ impl TimelineWidget {
                     let delta_time = TimeRational::from_seconds(delta_sec, 1000);
                     let target_start = (initial_start + delta_time).max(TimeRational::ZERO);
 
-                    let mut proj = imp.project.borrow_mut();
+                    let proj_rc = imp.project_rc();
+                    let mut proj = proj_rc.borrow_mut();
                     let threshold = coords.snap_threshold_time(10.0);
                     let snapped = proj.snap_time(target_start, threshold, Some(clip_id));
 
@@ -541,7 +580,8 @@ impl TimelineWidget {
                 } => {
                     let current_mouse_x = initial_mouse_x + offset_x as f32;
                     let target_time = coords.x_to_time(current_mouse_x);
-                    let mut proj = imp.project.borrow_mut();
+                    let proj_rc = imp.project_rc();
+                    let mut proj = proj_rc.borrow_mut();
                     let threshold = coords.snap_threshold_time(10.0);
                     let snapped = proj.snap_time(target_time, threshold, Some(clip_id));
 
@@ -559,7 +599,8 @@ impl TimelineWidget {
                 } => {
                     let current_mouse_x = initial_mouse_x + offset_x as f32;
                     let target_time = coords.x_to_time(current_mouse_x);
-                    let mut proj = imp.project.borrow_mut();
+                    let proj_rc = imp.project_rc();
+                    let mut proj = proj_rc.borrow_mut();
                     let threshold = coords.snap_threshold_time(10.0);
                     let snapped = proj.snap_time(target_time, threshold, Some(clip_id));
 
@@ -572,6 +613,19 @@ impl TimelineWidget {
                 DragState::None => {}
             }
         });
+
+        let widget_ref_drag_end = self.clone();
+        drag_gesture.connect_drag_end(move |_gesture, _offset_x, _offset_y| {
+            let imp = widget_ref_drag_end.imp();
+            let mut state = imp.state.borrow_mut();
+            if state.drag_state != DragState::None {
+                state.drag_state = DragState::None;
+                drop(state);
+                widget_ref_drag_end.notify_project_changed();
+                widget_ref_drag_end.queue_draw();
+            }
+        });
+
         self.add_controller(drag_gesture);
 
         // 3. Motion controller for interactive hover cursor
@@ -581,7 +635,8 @@ impl TimelineWidget {
         motion_ctrl.connect_motion(move |_ctrl, x, y| {
             let imp = widget_ref_motion.imp();
             let coords = *imp.coords.borrow();
-            let proj = imp.project.borrow();
+            let proj_rc = imp.project_rc();
+            let proj = proj_rc.borrow();
             let hit = imp
                 .state
                 .borrow()
