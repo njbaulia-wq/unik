@@ -71,10 +71,10 @@ install_from_release() {
 
     if [ -n "${RELEASE_JSON}" ]; then
         if [ "${DISTRO}" = "fedora" ]; then
-            ASSET_URL="$(echo "${RELEASE_JSON}" | grep "browser_download_url.*fluxcut-fedora.*${ARCH_NAME}.*tar.gz" | head -n 1 | cut -d '"' -f 4 || true)"
+            ASSET_URL="$(echo "${RELEASE_JSON}" | grep -o 'https://[^" ]*fedora[^" ]*'"${ARCH_NAME}"'[^" ]*\.tar\.gz' | head -n 1 || true)"
         fi
         if [ -z "${ASSET_URL}" ]; then
-            ASSET_URL="$(echo "${RELEASE_JSON}" | grep "browser_download_url.*fluxcut-.*${ARCH_NAME}.*tar.gz" | head -n 1 | cut -d '"' -f 4 || true)"
+            ASSET_URL="$(echo "${RELEASE_JSON}" | grep -o 'https://[^" ]*'"${ARCH_NAME}"'[^" ]*\.tar\.gz' | head -n 1 || true)"
         fi
     fi
 

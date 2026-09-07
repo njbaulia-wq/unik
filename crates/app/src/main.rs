@@ -73,7 +73,12 @@ fn main() {
     let config_clone = config.clone();
 
     app.connect_startup(move |_| {
-        // Apply color scheme preference
+        // Clear deprecated GtkSettings property if present from environment/distro config
+        if let Some(settings) = gtk4::Settings::default() {
+            settings.reset_property("gtk-application-prefer-dark-theme");
+        }
+
+        // Apply libadwaita color scheme preference
         let style_manager = adw::StyleManager::default();
         match config_clone.theme {
             ThemePreference::Dark => style_manager.set_color_scheme(adw::ColorScheme::ForceDark),

@@ -31,6 +31,10 @@ pub enum PlaybackEvent {
         fps: f64,
     },
     Frame(DecodedVideoFrame),
+    AudioSamples(Vec<f32>),
+    Seeked {
+        timestamp_sec: f64,
+    },
     StateChanged(PlaybackState),
     Eof,
     Error(String),
@@ -151,6 +155,9 @@ struct DecodeWorkerState {
     current_pts_sec: f64,
     is_playing: bool,
     speed: f64,
+    audio_decoder: Option<ffmpeg::decoder::Audio>,
+    audio_resampler: Option<ffmpeg::software::resampling::Context>,
+    audio_stream_index: Option<usize>,
 }
 
 impl DecodeWorkerState {
@@ -173,6 +180,9 @@ impl DecodeWorkerState {
             current_pts_sec: 0.0,
             is_playing: false,
             speed: 1.0,
+            audio_decoder: None,
+            audio_resampler: None,
+            audio_stream_index: None,
         }
     }
 
@@ -256,6 +266,9 @@ impl DecodeWorkerState {
                 self.input_ctx = None;
                 self.decoder = None;
                 self.scaler = None;
+                self.audio_decoder = None;
+                self.audio_resampler = None;
+                self.audio_stream_index = None;
                 self.is_playing = false;
                 let _ = self
                     .event_tx
@@ -292,16 +305,70 @@ impl DecodeWorkerState {
                             let height = dec.height();
                             let format = dec.format();
 
+                            // AGENTS.md P2: Preview is disposable. Clamp preview render resolution
+                            // to max 1280x720 to prevent 4K memory bandwidth stalls on the UI thread.
+                            const MAX_PREVIEW_W: u32 = 1280;
+                            const MAX_PREVIEW_H: u32 = 720;
+                            let (out_w, out_h) = if width > MAX_PREVIEW_W || height > MAX_PREVIEW_H
+                            {
+                                let scale_w = MAX_PREVIEW_W as f64 / width as f64;
+                                let scale_h = MAX_PREVIEW_H as f64 / height as f64;
+                                let scale = scale_w.min(scale_h);
+                                let tw = ((width as f64 * scale).round() as u32).max(2) & !1;
+                                let th = ((height as f64 * scale).round() as u32).max(2) & !1;
+                                (tw, th)
+                            } else {
+                                (width & !1, height & !1)
+                            };
+
                             let scaler = ffmpeg::software::scaling::Context::get(
                                 format,
                                 width,
                                 height,
                                 ffmpeg::format::Pixel::RGBA,
-                                width,
-                                height,
-                                ffmpeg::software::scaling::Flags::BILINEAR,
+                                out_w,
+                                out_h,
+                                ffmpeg::software::scaling::Flags::FAST_BILINEAR,
                             )
                             .ok();
+
+                            // Initialize audio decoder and stereo f32 resampler if stream exists
+                            let mut audio_dec = None;
+                            let mut audio_resamp = None;
+                            let mut audio_idx = None;
+
+                            if let Some(astream) = ictx.streams().best(ffmpeg::media::Type::Audio) {
+                                let aidx = astream.index();
+                                if let Ok(ctx) = ffmpeg::codec::context::Context::from_parameters(
+                                    astream.parameters(),
+                                ) {
+                                    if let Ok(adec) = ctx.decoder().audio() {
+                                        let in_fmt = adec.format();
+                                        let in_layout = if adec.channel_layout().is_empty() {
+                                            ffmpeg::ChannelLayout::default(adec.channels() as i32)
+                                        } else {
+                                            adec.channel_layout()
+                                        };
+                                        let in_rate = adec.rate();
+
+                                        let resampler = ffmpeg::software::resampling::Context::get(
+                                            in_fmt,
+                                            in_layout,
+                                            in_rate,
+                                            ffmpeg::format::Sample::F32(
+                                                ffmpeg::format::sample::Type::Packed,
+                                            ),
+                                            ffmpeg::ChannelLayout::STEREO,
+                                            44100,
+                                        )
+                                        .ok();
+
+                                        audio_dec = Some(adec);
+                                        audio_resamp = resampler;
+                                        audio_idx = Some(aidx);
+                                    }
+                                }
+                            }
 
                             self.input_ctx = Some(ictx);
                             self.decoder = Some(dec);
@@ -311,6 +378,9 @@ impl DecodeWorkerState {
                             self.fps = fps;
                             self.duration_sec = duration_sec.max(0.0);
                             self.current_pts_sec = 0.0;
+                            self.audio_decoder = audio_dec;
+                            self.audio_resampler = audio_resamp;
+                            self.audio_stream_index = audio_idx;
 
                             let _ = self.event_tx.send(PlaybackEvent::Loaded {
                                 duration_sec: self.duration_sec,
@@ -348,6 +418,7 @@ impl DecodeWorkerState {
     fn seek_to(&mut self, timestamp_sec: f64) {
         let tb = self.time_base;
         let target_stream = self.stream_index;
+        let audio_idx = self.audio_stream_index;
 
         let (ictx, decoder) = match (&mut self.input_ctx, &mut self.decoder) {
             (Some(i), Some(d)) => (i, d),
@@ -359,6 +430,11 @@ impl DecodeWorkerState {
 
         let _ = ictx.seek(target_pts, ..target_pts);
         decoder.flush();
+        if let Some(ref mut adec) = self.audio_decoder {
+            adec.flush();
+        }
+
+        let _ = self.event_tx.send(PlaybackEvent::Seeked { timestamp_sec });
 
         let mut last_decoded_pts = None;
         let mut target_frame = None;
@@ -366,7 +442,8 @@ impl DecodeWorkerState {
 
         // Decode forward from keyframe until we reach target timestamp without redundant scaling
         for (stream, packet) in ictx.packets() {
-            if stream.index() == target_stream && decoder.send_packet(&packet).is_ok() {
+            let s_idx = stream.index();
+            if s_idx == target_stream && decoder.send_packet(&packet).is_ok() {
                 let mut reached_target = false;
                 while decoder.receive_frame(&mut decoded_frame).is_ok() {
                     let frame_pts = decoded_frame.pts().unwrap_or(0) as f64
@@ -383,6 +460,12 @@ impl DecodeWorkerState {
                 if reached_target {
                     break;
                 }
+            } else if Some(s_idx) == audio_idx {
+                if let Some(ref mut adec) = self.audio_decoder {
+                    let _ = adec.send_packet(&packet);
+                    let mut a_frame = ffmpeg::util::frame::Audio::empty();
+                    while adec.receive_frame(&mut a_frame).is_ok() {}
+                }
             }
         }
 
@@ -396,6 +479,7 @@ impl DecodeWorkerState {
     fn decode_and_send_next_frame(&mut self) -> bool {
         let tb = self.time_base;
         let target_stream = self.stream_index;
+        let audio_idx = self.audio_stream_index;
 
         let (ictx, decoder) = match (&mut self.input_ctx, &mut self.decoder) {
             (Some(i), Some(d)) => (i, d),
@@ -405,21 +489,37 @@ impl DecodeWorkerState {
         let mut decoded_frame = ffmpeg::util::frame::Video::empty();
 
         for (stream, packet) in ictx.packets() {
-            if stream.index() == target_stream
-                && decoder.send_packet(&packet).is_ok()
-                && decoder.receive_frame(&mut decoded_frame).is_ok()
-            {
-                let frame_pts = decoded_frame.pts().unwrap_or(0) as f64 * (tb.numerator() as f64)
-                    / (tb.denominator() as f64);
+            let s_idx = stream.index();
+            if s_idx == target_stream {
+                if decoder.send_packet(&packet).is_ok()
+                    && decoder.receive_frame(&mut decoded_frame).is_ok()
+                {
+                    let frame_pts = decoded_frame.pts().unwrap_or(0) as f64
+                        * (tb.numerator() as f64)
+                        / (tb.denominator() as f64);
 
-                self.current_pts_sec = frame_pts;
-                Self::emit_frame_internal(
-                    &mut self.scaler,
-                    &self.event_tx,
-                    frame_pts,
-                    &decoded_frame,
-                );
-                return true;
+                    self.current_pts_sec = frame_pts;
+                    Self::emit_frame_internal(
+                        &mut self.scaler,
+                        &self.event_tx,
+                        frame_pts,
+                        &decoded_frame,
+                    );
+                    return true;
+                }
+            } else if Some(s_idx) == audio_idx {
+                if let Some(ref mut adec) = self.audio_decoder {
+                    if adec.send_packet(&packet).is_ok() {
+                        let mut a_frame = ffmpeg::util::frame::Audio::empty();
+                        while adec.receive_frame(&mut a_frame).is_ok() {
+                            Self::emit_audio_internal(
+                                &mut self.audio_resampler,
+                                &self.event_tx,
+                                &a_frame,
+                            );
+                        }
+                    }
+                }
             }
         }
 
@@ -467,6 +567,33 @@ impl DecodeWorkerState {
 
             let video_frame = DecodedVideoFrame::new(pts_sec, width, height, data, frame.is_key());
             let _ = event_tx.send(PlaybackEvent::Frame(video_frame));
+        }
+    }
+
+    fn emit_audio_internal(
+        resampler: &mut Option<ffmpeg::software::resampling::Context>,
+        event_tx: &Sender<PlaybackEvent>,
+        frame: &ffmpeg::util::frame::Audio,
+    ) {
+        let resampler = match resampler.as_mut() {
+            Some(r) => r,
+            None => return,
+        };
+
+        let mut resampled = ffmpeg::util::frame::Audio::empty();
+        if resampler.run(frame, &mut resampled).is_ok() {
+            let total_samples = resampled.samples() * 2; // stereo packed
+            let plane = resampled.data(0);
+            let floats: Vec<f32> = plane
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .take(total_samples)
+                .map(|b| f32::from_le_bytes(*b))
+                .collect();
+            if !floats.is_empty() {
+                let _ = event_tx.send(PlaybackEvent::AudioSamples(floats));
+            }
         }
     }
 }

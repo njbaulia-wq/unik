@@ -15,6 +15,7 @@ fluxcut-media.workspace = true
 fluxcut-decode.workspace = true
 fluxcut-render.workspace = true
 fluxcut-timeline.workspace = true
+fluxcut-audio.workspace = true
 fluxcut-export.workspace = true
 crossbeam-channel.workspace = true
 gtk4.workspace = true

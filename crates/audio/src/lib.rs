@@ -4,9 +4,11 @@
 //! mute handling, and fade transitions.
 
 pub mod mixer;
+pub mod monitor;
 pub mod waveform;
 
 pub use mixer::{AudioMixer, AudioSourceSlice};
+pub use monitor::AudioMonitor;
 pub use waveform::{WaveformBar, WaveformDownsampler};
 
 #[cfg(test)]

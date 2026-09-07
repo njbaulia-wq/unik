@@ -18,7 +18,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.2"
 edition = "2021"
 authors = ["FluxCut Contributors"]
 license = "GPL-3.0-or-later"
@@ -42,6 +42,7 @@ fluxcut-ui = { path = "crates/ui" }
 
 # Media Engine
 ffmpeg-next = "9.0.0"
+cpal = "0.15"
 
 # Concurrency & Channels
 crossbeam-channel = "0.5"

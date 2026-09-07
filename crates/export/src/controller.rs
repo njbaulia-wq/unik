@@ -1,7 +1,7 @@
 //! Background export task controller with mode dispatch (fast-path vs transcode) and QA verification.
 
 use crate::error::ExportError;
-use crate::remux::{can_fast_path_remux, fast_path_remux};
+use crate::remux::can_fast_path_remux;
 use crate::transcode::{ExportProgress, TranscodeEngine};
 use crate::validator::{verify_exported_file, ExportValidationReport};
 use crossbeam_channel::{bounded, Receiver, Sender};
@@ -92,22 +92,45 @@ impl ExportController {
                 mode: ExportMode::FastPathRemux,
             });
 
-            match fast_path_remux(&input_path, &output_path, in_sec, out_sec) {
-                Ok(()) => match verify_exported_file(&output_path, Some(w), Some(h), min_dur) {
-                    Ok(report) => {
-                        let _ = event_tx.send(ExportEvent::Finished {
-                            mode: ExportMode::FastPathRemux,
-                            report,
-                        });
+            let (prog_tx, prog_rx) = bounded::<ExportProgress>(32);
+            let event_tx_clone = event_tx.clone();
+            let forwarder = thread::spawn(move || {
+                while let Ok(prog) = prog_rx.recv() {
+                    let _ = event_tx_clone.send(ExportEvent::Progress(prog));
+                }
+            });
+
+            match crate::remux::fast_path_remux_with_progress(
+                &input_path,
+                &output_path,
+                in_sec,
+                out_sec,
+                Some(prog_tx),
+                Some(cancel_flag),
+            ) {
+                Ok(()) => {
+                    let _ = forwarder.join();
+                    match verify_exported_file(&output_path, Some(w), Some(h), min_dur) {
+                        Ok(report) => {
+                            let _ = event_tx.send(ExportEvent::Finished {
+                                mode: ExportMode::FastPathRemux,
+                                report,
+                            });
+                        }
+                        Err(e) => {
+                            let _ = event_tx.send(ExportEvent::Error(format!(
+                                "Post-export validation failed: {}",
+                                e
+                            )));
+                        }
                     }
-                    Err(e) => {
-                        let _ = event_tx.send(ExportEvent::Error(format!(
-                            "Post-export validation failed: {}",
-                            e
-                        )));
-                    }
-                },
+                }
+                Err(ExportError::Cancelled) => {
+                    let _ = forwarder.join();
+                    let _ = event_tx.send(ExportEvent::Cancelled);
+                }
                 Err(e) => {
+                    let _ = forwarder.join();
                     let _ = event_tx.send(ExportEvent::Error(format!("Remux failed: {}", e)));
                 }
             }

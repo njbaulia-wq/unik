@@ -23,7 +23,7 @@ jobs:
             build-essential pkg-config clang libclang-dev \
             libgtk-4-dev libadwaita-1-dev \
             libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libavfilter-dev libavdevice-dev \
-            libvulkan-dev libva-dev
+            libvulkan-dev libva-dev libasound2-dev ffmpeg
 
       - name: Set up Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -77,7 +77,7 @@ jobs:
         run: |
           docker run --rm -v ${{ github.workspace }}:/workspace fedora:latest bash -c "
             set -e
-            dnf install -y --setopt=install_weak_deps=False gcc pkgconf-pkg-config gtk4-devel libadwaita-devel ffmpeg-free-devel clang rust cargo git
+            dnf install -y --setopt=install_weak_deps=False gcc pkgconf-pkg-config gtk4-devel libadwaita-devel ffmpeg-free-devel alsa-lib-devel clang rust cargo git
             cd /workspace
             cargo build --release --workspace --target-dir /workspace/target-fedora
           "

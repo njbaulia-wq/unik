@@ -11,6 +11,6 @@ pub mod validator;
 
 pub use controller::{ExportController, ExportEvent, ExportMode};
 pub use error::ExportError;
-pub use remux::{can_fast_path_remux, fast_path_remux};
+pub use remux::{can_fast_path_remux, fast_path_remux, fast_path_remux_with_progress};
 pub use transcode::{ExportProgress, TranscodeEngine};
 pub use validator::{verify_exported_file, ExportValidationReport};

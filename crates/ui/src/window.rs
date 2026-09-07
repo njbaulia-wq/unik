@@ -1,6 +1,7 @@
 //! Main application window layout, media workspace, video playback viewport, and timeline editor using libadwaita.
 
 use crate::dialogs::{show_about_dialog, show_capabilities_dialog, show_preferences_dialog};
+use fluxcut_audio::AudioMonitor;
 use fluxcut_cache::DiskCacheManager;
 use fluxcut_decode::{PlaybackController, PlaybackEvent, PlaybackState};
 use fluxcut_diagnostics::DiagnosticReport;
@@ -22,7 +23,17 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
-use tracing::{debug, error, info};
+use tracing::{error, info};
+
+struct ActiveExportState {
+    controller: ExportController,
+    dialog: adw::Window,
+    progress_bar: gtk4::ProgressBar,
+    mode_label: gtk4::Label,
+    status_label: gtk4::Label,
+    eta_label: gtk4::Label,
+    start_time: std::time::Instant,
+}
 
 pub struct MainWindow {
     pub window: adw::ApplicationWindow,
@@ -44,10 +55,12 @@ pub struct MainWindow {
     #[allow(dead_code)]
     playback: Rc<PlaybackController>,
     #[allow(dead_code)]
+    audio_monitor: Rc<AudioMonitor>,
+    #[allow(dead_code)]
     render_bridge: Rc<RefCell<VideoPresentationBridge>>,
     pub timeline_widget: TimelineWidget,
     #[allow(dead_code)]
-    active_export: Rc<RefCell<Option<ExportController>>>,
+    active_export: Rc<RefCell<Option<ActiveExportState>>>,
 }
 
 impl MainWindow {
@@ -70,6 +83,8 @@ impl MainWindow {
 
         // Initialize background video playback controller
         let playback = Rc::new(PlaybackController::new());
+        // Initialize real-time audio playback monitor via cpal
+        let audio_monitor = Rc::new(AudioMonitor::new());
 
         let window = adw::ApplicationWindow::builder()
             .application(app)
@@ -476,13 +491,20 @@ impl MainWindow {
         });
 
         // Active background export controller
-        let active_export: Rc<RefCell<Option<ExportController>>> = Rc::new(RefCell::new(None));
+        let active_export: Rc<RefCell<Option<ActiveExportState>>> = Rc::new(RefCell::new(None));
         let proj_exp = Rc::clone(&project);
         let win_exp = window.clone();
         let active_exp_ref = Rc::clone(&active_export);
         let toast_exp = toast_overlay.clone();
 
         export_btn.connect_clicked(move |_| {
+            if proj_exp.borrow().total_duration().to_seconds() <= 0.001 {
+                toast_exp.add_toast(adw::Toast::new(
+                    "Cannot export empty project: add a clip to the timeline first",
+                ));
+                return;
+            }
+
             let file_dialog = gtk4::FileDialog::builder()
                 .title("Export Video File")
                 .initial_name("output.mp4")
@@ -491,12 +513,106 @@ impl MainWindow {
             let p_ref = Rc::clone(&proj_exp);
             let act_ref = Rc::clone(&active_exp_ref);
             let t_ref = toast_exp.clone();
+            let parent_win = win_exp.clone();
+
             file_dialog.save(Some(&win_exp), gio::Cancellable::NONE, move |res| {
                 if let Ok(file) = res {
                     if let Some(path) = file.path() {
+                        let export_dialog = adw::Window::builder()
+                            .transient_for(&parent_win)
+                            .modal(true)
+                            .title("Exporting Video…")
+                            .default_width(440)
+                            .default_height(220)
+                            .resizable(false)
+                            .build();
+
+                        let vbox = gtk4::Box::new(gtk4::Orientation::Vertical, 10);
+                        vbox.set_margin_top(20);
+                        vbox.set_margin_bottom(20);
+                        vbox.set_margin_start(24);
+                        vbox.set_margin_end(24);
+
+                        let file_title = path
+                            .file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_else(|| "output.mp4".to_string());
+                        let heading = gtk4::Label::builder()
+                            .label(format!("Exporting: {}", file_title))
+                            .css_classes(["title-3"])
+                            .halign(gtk4::Align::Start)
+                            .ellipsize(gtk4::pango::EllipsizeMode::Middle)
+                            .build();
+
+                        let mode_lbl = gtk4::Label::builder()
+                            .label("Preparing render engine…")
+                            .css_classes(["caption", "dim-label"])
+                            .halign(gtk4::Align::Start)
+                            .build();
+
+                        let pbar = gtk4::ProgressBar::builder()
+                            .fraction(0.0)
+                            .show_text(true)
+                            .text("0.0%")
+                            .margin_top(8)
+                            .margin_bottom(4)
+                            .build();
+
+                        let status_lbl = gtk4::Label::builder()
+                            .label("Rendering timeline…")
+                            .css_classes(["body"])
+                            .halign(gtk4::Align::Start)
+                            .build();
+
+                        let eta_lbl = gtk4::Label::builder()
+                            .label("Elapsed: 00:00 • Remaining: Calculating…")
+                            .css_classes(["caption", "dim-label"])
+                            .halign(gtk4::Align::Start)
+                            .build();
+
+                        let btn_box = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+                        btn_box.set_halign(gtk4::Align::End);
+                        btn_box.set_margin_top(12);
+
+                        let cancel_btn = gtk4::Button::builder()
+                            .label("Cancel Export")
+                            .css_classes(["destructive-action"])
+                            .build();
+
+                        btn_box.append(&cancel_btn);
+
+                        vbox.append(&heading);
+                        vbox.append(&mode_lbl);
+                        vbox.append(&pbar);
+                        vbox.append(&status_lbl);
+                        vbox.append(&eta_lbl);
+                        vbox.append(&btn_box);
+
+                        export_dialog.set_content(Some(&vbox));
+                        export_dialog.present();
+
                         let ctrl = ExportController::start(p_ref.borrow().clone(), path);
-                        *act_ref.borrow_mut() = Some(ctrl);
-                        t_ref.add_toast(adw::Toast::new("Starting background export…"));
+
+                        let act_cancel = Rc::clone(&act_ref);
+                        cancel_btn.connect_clicked(move |b| {
+                            b.set_sensitive(false);
+                            if let Some(ref state) = *act_cancel.borrow() {
+                                state.controller.cancel();
+                                state.status_label.set_label("Cancelling export…");
+                            }
+                        });
+
+                        *act_ref.borrow_mut() = Some(ActiveExportState {
+                            controller: ctrl,
+                            dialog: export_dialog,
+                            progress_bar: pbar,
+                            mode_label: mode_lbl,
+                            status_label: status_lbl,
+                            eta_label: eta_lbl,
+                            start_time: std::time::Instant::now(),
+                        });
+
+                        t_ref.add_toast(adw::Toast::new("Started background export…"));
                     }
                 }
             });
@@ -777,6 +893,7 @@ impl MainWindow {
         let preview_status_clone = preview_status.clone();
 
         let playback_poll_clone = Rc::clone(&playback);
+        let audio_monitor_poll = Rc::clone(&audio_monitor);
         let render_bridge_clone = Rc::clone(&render_bridge);
         let play_btn_clone = play_btn.clone();
         let scrubber_clone = scrubber.clone();
@@ -786,6 +903,7 @@ impl MainWindow {
         let is_scrubbing_flag = Rc::clone(&is_user_scrubbing);
         let timeline_widget_clone = timeline_widget.clone();
         let active_exp_poll = Rc::clone(&active_export);
+        let playback_for_ingest = Rc::clone(&playback);
 
         glib::timeout_add_local(std::time::Duration::from_millis(20), move || {
             // 1. Process media ingestion responses
@@ -796,12 +914,13 @@ impl MainWindow {
                     &project_poll,
                     &history_poll,
                     &timeline_poll,
+                    &playback_for_ingest,
                     &toast_poll,
                     &preview_status_clone,
                 );
             }
 
-            // 2. Process playback events (Frames, Loaded metadata, State changes)
+            // 2. Process playback events (Frames, Loaded metadata, State changes, Audio samples)
             while let Some(event) = playback_poll_clone.try_recv() {
                 match event {
                     PlaybackEvent::Loaded {
@@ -837,20 +956,33 @@ impl MainWindow {
                         scrubber_clone.set_value(frame.pts_sec);
                         is_scrubbing_flag.set(true);
                     }
+                    PlaybackEvent::AudioSamples(samples) => {
+                        audio_monitor_poll.push_samples(&samples);
+                    }
+                    PlaybackEvent::Seeked { .. } => {
+                        audio_monitor_poll.clear();
+                    }
                     PlaybackEvent::StateChanged(state) => match state {
                         PlaybackState::Playing => {
                             is_playing_state_clone.set(true);
                             play_btn_clone.set_icon_name("media-playback-pause-symbolic");
+                            audio_monitor_poll.set_active(true);
                         }
                         PlaybackState::Paused | PlaybackState::Idle => {
                             is_playing_state_clone.set(false);
                             play_btn_clone.set_icon_name("media-playback-start-symbolic");
+                            audio_monitor_poll.set_active(false);
+                            audio_monitor_poll.clear();
                         }
-                        PlaybackState::Seeking => {}
+                        PlaybackState::Seeking => {
+                            audio_monitor_poll.clear();
+                        }
                     },
                     PlaybackEvent::Eof => {
                         is_playing_state_clone.set(false);
                         play_btn_clone.set_icon_name("media-playback-start-symbolic");
+                        audio_monitor_poll.set_active(false);
+                        audio_monitor_poll.clear();
                     }
                     PlaybackEvent::Error(err) => {
                         error!("Playback error: {}", err);
@@ -861,27 +993,52 @@ impl MainWindow {
 
             // 3. Process background export events
             let mut export_done = false;
-            if let Some(ref mut exp) = *active_exp_poll.borrow_mut() {
-                while let Some(event) = exp.try_recv() {
+            if let Some(ref mut exp_state) = *active_exp_poll.borrow_mut() {
+                while let Some(event) = exp_state.controller.try_recv() {
                     match event {
                         ExportEvent::Started { mode } => {
+                            exp_state.mode_label.set_label(mode.label());
                             toast_poll.add_toast(adw::Toast::new(&format!(
                                 "Export started: {}",
                                 mode.label()
                             )));
                         }
                         ExportEvent::Progress(prog) => {
-                            let percent = if prog.total_sec > 0.0 {
-                                (prog.current_sec / prog.total_sec) * 100.0
+                            let fraction = prog.progress_pct.clamp(0.0, 1.0) as f64;
+                            exp_state.progress_bar.set_fraction(fraction);
+                            exp_state
+                                .progress_bar
+                                .set_text(Some(&format!("{:.1}%", fraction * 100.0)));
+
+                            let total_fr = prog.total_frames.max(1);
+                            let cur_fr = prog.current_frame.min(total_fr);
+                            exp_state.status_label.set_label(&format!(
+                                "Frame: {}/{} ({:.1}s / {:.1}s)",
+                                cur_fr, total_fr, prog.current_sec, prog.total_sec
+                            ));
+
+                            let elapsed = exp_state.start_time.elapsed().as_secs_f64();
+                            let eta_str = if elapsed > 0.5
+                                && prog.current_sec > 0.05
+                                && prog.current_sec < prog.total_sec
+                            {
+                                let rate = prog.current_sec / elapsed;
+                                let rem_sec = (prog.total_sec - prog.current_sec) / rate;
+                                format!(
+                                    "Elapsed: {} • Remaining: ~{}",
+                                    format_time(elapsed),
+                                    format_time(rem_sec)
+                                )
                             } else {
-                                0.0
+                                format!("Elapsed: {}", format_time(elapsed))
                             };
-                            debug!(
-                                "Export progress: {:.1}% ({}/{} frames)",
-                                percent, prog.current_frame, prog.total_frames
-                            );
+                            exp_state.eta_label.set_label(&eta_str);
                         }
                         ExportEvent::Finished { mode: _, report } => {
+                            exp_state.progress_bar.set_fraction(1.0);
+                            exp_state.progress_bar.set_text(Some("100.0%"));
+                            exp_state.dialog.close();
+
                             let mb = report.file_size_bytes as f64 / (1024.0 * 1024.0);
                             let dims = match (report.width, report.height) {
                                 (Some(w), Some(h)) => format!(" [{}x{}]", w, h),
@@ -894,10 +1051,12 @@ impl MainWindow {
                             export_done = true;
                         }
                         ExportEvent::Cancelled => {
+                            exp_state.dialog.close();
                             toast_poll.add_toast(adw::Toast::new("Export was cancelled"));
                             export_done = true;
                         }
                         ExportEvent::Error(err) => {
+                            exp_state.dialog.close();
                             error!("Export failed: {}", err);
                             toast_poll
                                 .add_toast(adw::Toast::new(&format!("Export failed: {}", err)));
@@ -924,6 +1083,7 @@ impl MainWindow {
             worker_pool,
             cache,
             playback,
+            audio_monitor,
             render_bridge,
             timeline_widget,
             active_export,
@@ -998,12 +1158,14 @@ fn dispatch_media_import(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn handle_ingest_response(
     resp: fluxcut_media::IngestResponse,
     active_rows: &Rc<RefCell<HashMap<String, (adw::ActionRow, PathBuf)>>>,
     project: &Rc<RefCell<Project>>,
     history: &Rc<RefCell<ProjectHistory>>,
     timeline_widget: &TimelineWidget,
+    playback: &Rc<PlaybackController>,
     toast: &adw::ToastOverlay,
     preview_status: &gtk4::Label,
 ) {
@@ -1107,12 +1269,21 @@ fn handle_ingest_response(
                 });
                 row.add_suffix(&add_tl_btn);
 
-                // Auto-place first clip if timeline is currently empty
+                // Auto-place first clip if timeline is currently empty, and configure project resolution
                 {
                     let mut p = project.borrow_mut();
                     let is_empty = p.tracks.iter().all(|t| t.clips.is_empty());
                     if is_empty {
                         history.borrow_mut().commit(&p, "Add First Clip");
+                        if let Some(ref v) = metadata.video {
+                            p.settings.width = v.width;
+                            p.settings.height = v.height;
+                            let fps = v.frame_rate.to_seconds().round() as u32;
+                            if fps > 0 {
+                                p.settings.fps_num = fps;
+                                p.settings.fps_den = 1;
+                            }
+                        }
                         let track_id = if metadata.video.is_some() {
                             "track-v1"
                         } else {
@@ -1132,10 +1303,13 @@ fn handle_ingest_response(
                         let _ = p.add_clip(track_id, clip);
                         drop(p);
                         timeline_widget.sync_from_project(&project.borrow());
+
+                        // Automatically load the clip into playback preview!
+                        let _ = playback.load(path.clone());
+                        preview_status.set_visible(false);
                     }
                 }
 
-                preview_status.set_label("Click clip in library to load into preview player");
                 toast.add_toast(adw::Toast::new(&format!("Ready: {}", row.title())));
             }
             Err(e) => {
