@@ -186,13 +186,21 @@ install_from_source() {
     if [ "${DISTRO}" = "fedora" ]; then
         if ! pkg-config --exists libavutil 2>/dev/null || ! pkg-config --exists gtk4 2>/dev/null; then
             echo -e "${BLUE}==>${NC} Installing Fedora development libraries (GTK4, Libadwaita, FFmpeg, Clang)..."
+            
+            # Select ffmpeg-devel if user has RPM Fusion ffmpeg-libs, else ffmpeg-free-devel
+            FFMPEG_PKG="ffmpeg-free-devel"
+            if rpm -q ffmpeg-libs >/dev/null 2>&1 || rpm -q rpmfusion-free-release >/dev/null 2>&1; then
+                FFMPEG_PKG="ffmpeg-devel"
+            fi
+
+            DNF_CMD="dnf install -y --allowerasing gcc pkgconf-pkg-config gtk4-devel libadwaita-devel ${FFMPEG_PKG} clang"
             if command -v sudo >/dev/null 2>&1; then
-                sudo dnf install -y gcc pkgconf-pkg-config gtk4-devel libadwaita-devel ffmpeg-free-devel clang
+                sudo ${DNF_CMD} || sudo dnf install -y --allowerasing gcc pkgconf-pkg-config gtk4-devel libadwaita-devel ffmpeg-free-devel clang || true
             elif [ "$(id -u)" -eq 0 ]; then
-                dnf install -y gcc pkgconf-pkg-config gtk4-devel libadwaita-devel ffmpeg-free-devel clang
+                ${DNF_CMD} || dnf install -y --allowerasing gcc pkgconf-pkg-config gtk4-devel libadwaita-devel ffmpeg-free-devel clang || true
             else
                 echo -e "${YELLOW}[WARNING] Sudo not available to install packages. If build fails, run:${NC}"
-                echo -e "  sudo dnf install -y gcc pkgconf-pkg-config gtk4-devel libadwaita-devel ffmpeg-free-devel clang"
+                echo -e "  sudo dnf install -y --allowerasing gcc pkgconf-pkg-config gtk4-devel libadwaita-devel ${FFMPEG_PKG} clang"
             fi
         fi
     elif [ "${DISTRO}" = "ubuntu" ] || [ "${DISTRO}" = "debian" ]; then
