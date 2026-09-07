@@ -68,31 +68,31 @@ jobs:
 
   build-fedora-release:
     runs-on: ubuntu-latest
-    container:
-      image: fedora:latest
+    needs: build-release
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Fedora dependencies
+      - name: Build Optimized Fedora Binary via Docker
         run: |
-          dnf install -y --setopt=install_weak_deps=False \
-            gcc pkgconf-pkg-config gtk4-devel libadwaita-devel ffmpeg-free-devel clang rust cargo git
-
-      - name: Build Optimized Fedora Binary
-        run: cargo build --release --workspace
+          docker run --rm -v ${{ github.workspace }}:/workspace fedora:latest bash -c "
+            set -e
+            dnf install -y --setopt=install_weak_deps=False gcc pkgconf-pkg-config gtk4-devel libadwaita-devel ffmpeg-free-devel clang rust cargo git
+            cd /workspace
+            cargo build --release --workspace --target-dir /workspace/target-fedora
+          "
 
       - name: Package Fedora Release Assets
         run: |
           mkdir -p dist/pkg-fedora
-          cp target/release/fluxcut dist/pkg-fedora/
+          cp target-fedora/release/fluxcut dist/pkg-fedora/
           cp install.sh dist/pkg-fedora/
           cp README.md dist/pkg-fedora/
           cp LICENSE dist/pkg-fedora/
           cp -r resources dist/pkg-fedora/
           cp org.fluxcut.FluxCut.yaml dist/pkg-fedora/
 
-          TAG="${GITHUB_REF_NAME:-v0.1.0}"
+          TAG="${GITHUB_REF_NAME:-v0.1.1}"
           tar -czf "dist/fluxcut-${TAG}-fedora-x86_64.tar.gz" -C dist/pkg-fedora .
           cp "dist/fluxcut-${TAG}-fedora-x86_64.tar.gz" dist/fluxcut-fedora-x86_64.tar.gz
 
